@@ -53,52 +53,23 @@ jobs:
         CONFIG_PACKAGE_mtd=y
         CONF
 
-    - name: Parchear regdb con frecuencias extendidas 4920-6100 MHz
+    - name: Parchear regdb con frecuencias extendidas
       run: |
         cd openwrt
-
-        echo "=== Buscando db.txt del wireless-regdb ==="
+        echo "=== Buscando db.txt ==="
         find . -name "db.txt" 2>/dev/null | head -10
-
-        REGDB_TXT=$(find feeds/ package/ -name "db.txt" 2>/dev/null | grep -v ".backup" | head -1)
-        echo "db.txt encontrado: $REGDB_TXT"
-
+        REGDB_TXT=$(find feeds/ package/ -name "db.txt" 2>/dev/null | grep -v backup | head -1)
+        echo "db.txt: $REGDB_TXT"
         if [ -n "$REGDB_TXT" ]; then
           cp "$REGDB_TXT" "${REGDB_TXT}.backup"
-
-          # Escribir regdb personalizado con frecuencias extendidas
-          cat > "$REGDB_TXT" << REGDB
-country 00:
-	(4920 - 6100 @ 80), (30), NO-CCK
-	(4920 - 6100 @ 40), (30), NO-CCK
-	(4920 - 6100 @ 20), (30), NO-CCK
-	(2402 - 2472 @ 40), (20), NO-CCK
-	(57240 - 63720 @ 2160), (0)
-
-country MX:
-	(4920 - 6100 @ 80), (30)
-	(4920 - 6100 @ 40), (30)
-	(4920 - 6100 @ 20), (30)
-	(2402 - 2472 @ 40), (20)
-	(57240 - 63720 @ 2160), (0)
-
-country US:
-	(4920 - 6100 @ 80), (30)
-	(4920 - 6100 @ 40), (30)
-	(4920 - 6100 @ 20), (30)
-	(2402 - 2472 @ 40), (20)
-	(57240 - 63720 @ 2160), (0)
-REGDB
-
+          printf 'country 00:\n\t(4920 - 6100 @ 80), (30), NO-CCK\n\t(4920 - 6100 @ 40), (30), NO-CCK\n\t(4920 - 6100 @ 20), (30), NO-CCK\n\t(2402 - 2472 @ 40), (20), NO-CCK\n\t(57240 - 63720 @ 2160), (0)\n\ncountry MX:\n\t(4920 - 6100 @ 80), (30)\n\t(4920 - 6100 @ 40), (30)\n\t(4920 - 6100 @ 20), (30)\n\t(2402 - 2472 @ 40), (20)\n\t(57240 - 63720 @ 2160), (0)\n\ncountry US:\n\t(4920 - 6100 @ 80), (30)\n\t(4920 - 6100 @ 40), (30)\n\t(4920 - 6100 @ 20), (30)\n\t(2402 - 2472 @ 40), (20)\n\t(57240 - 63720 @ 2160), (0)\n' > "$REGDB_TXT"
           echo "=== db.txt parcheado ==="
           cat "$REGDB_TXT"
         fi
-
-        # Deshabilitar regdb interno del kernel y usar archivo externo
         for KCONF in $(find target/linux/ath79 -name "config-*" 2>/dev/null); do
           sed -i 's/CONFIG_CFG80211_INTERNAL_REGDB=y/# CONFIG_CFG80211_INTERNAL_REGDB is not set/' "$KCONF" 2>/dev/null || true
           echo "CONFIG_ATH_USER_REGD=y" >> "$KCONF"
-          echo "Modificado kernel config: $KCONF"
+          echo "Modificado: $KCONF"
         done
 
     - name: Parchear DTS quitar read-only de ART
@@ -112,38 +83,28 @@ REGDB
         if [ -n "$DTS_FILE" ]; then
           sed -i '/art@/,/};/{/read-only/d}' "$DTS_FILE"
           sed -i '/label.*art/,/};/{/read-only/d}' "$DTS_FILE"
-          echo "DTS parcheado - read-only eliminado de ART"
+          echo "DTS parcheado"
         fi
 
     - name: Crear archivos de configuracion
       run: |
         cd openwrt
-        mkdir -p files/etc/config
-        mkdir -p files/etc/init.d
-        mkdir -p files/etc/uci-defaults
-        mkdir -p files/etc/modules.d
+        mkdir -p files/etc/config files/etc/init.d files/etc/uci-defaults files/etc/modules.d
 
-        # Forzar regdomain 0 al cargar modulo ath
         echo "options ath regdomain=0" > files/etc/modules.d/ath9k-custom
 
-        # Configuracion wireless WPA2 con pais 00
         printf "config wifi-device 'radio0'\n\toption type 'mac80211'\n\toption hwmode '11a'\n\toption channel '100'\n\toption country '00'\n\toption htmode 'HT20'\n\toption disabled '0'\nconfig wifi-iface 'default_radio0'\n\toption device 'radio0'\n\toption network 'lan'\n\toption mode 'ap'\n\toption ssid 'TECNODANY2026-AP'\n\toption encryption 'psk2'\n\toption key 'td1721DANY'\n" > files/etc/config/wireless
 
-        # Configuracion de red Router + Bridge
         printf "config interface 'loopback'\n\toption ifname 'lo'\n\toption proto 'static'\n\toption ipaddr '127.0.0.1'\n\toption netmask '255.0.0.0'\nconfig interface 'lan'\n\toption type 'bridge'\n\toption ifname 'eth0'\n\toption proto 'static'\n\toption ipaddr '192.168.1.1'\n\toption netmask '255.255.255.0'\nconfig interface 'wan'\n\toption ifname 'eth1'\n\toption proto 'dhcp'\n" > files/etc/config/network
 
-        # Hostname
         printf "config system\n\toption hostname 'LiteBeam-TECNODANY'\n\toption timezone 'CST6CDT,M3.2.0,M11.1.0'\n" > files/etc/config/system
 
-        # Script fix-regdomain en arranque
         printf '#!/bin/sh /etc/rc.common\nSTART=11\n\nstart() {\n    sleep 2\n    rmmod ath9k 2>/dev/null\n    rmmod ath9k_common 2>/dev/null\n    rmmod ath9k_hw 2>/dev/null\n    rmmod ath 2>/dev/null\n    sleep 1\n    modprobe ath regdomain=0\n    modprobe ath9k_hw\n    modprobe ath9k_common\n    modprobe ath9k\n    sleep 1\n    iw reg set 00\n    logger "regdomain forzado a 00 mundial"\n}\n\nstop() { return 0; }\n' > files/etc/init.d/fix-regdomain
         chmod +x files/etc/init.d/fix-regdomain
 
-        # Usuario TECNODANY2026 persistente
         printf '#!/bin/sh /etc/rc.common\nSTART=99\nstart() {\n  if ! grep -q "^TECNODANY2026:" /etc/passwd; then\n    HASH=$(echo "td1721DANY" | openssl passwd -1 -stdin)\n    echo "TECNODANY2026:x:1001:1001:Admin:/home/TECNODANY2026:/bin/ash" >> /etc/passwd\n    echo "TECNODANY2026:${HASH}:19000:0:99999:7:::" >> /etc/shadow\n    mkdir -p /home/TECNODANY2026\n  fi\n}\nstop() { return 0; }\n' > files/etc/init.d/tecnodany-persist
         chmod +x files/etc/init.d/tecnodany-persist
 
-        # Script UCI defaults - primer arranque
         printf '#!/bin/sh\necho "root:td1721DANY" | chpasswd\nHASH=$(echo "td1721DANY" | openssl passwd -1 -stdin)\nif ! grep -q "^TECNODANY2026:" /etc/passwd; then\n  echo "TECNODANY2026:x:1001:1001:Admin:/home/TECNODANY2026:/bin/ash" >> /etc/passwd\n  echo "TECNODANY2026:${HASH}:19000:0:99999:7:::" >> /etc/shadow\n  mkdir -p /home/TECNODANY2026\nfi\nuci set system.@system[0].hostname=LiteBeam-TECNODANY\nuci commit system\nexit 0\n' > files/etc/uci-defaults/99-tecnodany
         chmod +x files/etc/uci-defaults/99-tecnodany
 
