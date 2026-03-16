@@ -22,35 +22,29 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Apply Ath9k Frequency Patch
+      - name: Apply Patch
         run: |
           cd openwrt
           MAC_PATCHES=$(find package/kernel/mac80211 -name "patches" -type d | head -1)
-          echo "mac80211 patches dir: $MAC_PATCHES"
           if [ -z "$MAC_PATCHES" ]; then
             MAC_PATCHES="package/kernel/mac80211/patches"
             mkdir -p "$MAC_PATCHES"
           fi
           cp $GITHUB_WORKSPACE/999-force-world-regd.patch "$MAC_PATCHES/999-force-world-regd.patch"
           echo "Parche copiado OK"
-          ls -la "$MAC_PATCHES/" | grep "999"
           for KCONF in $(find target/linux/ath79 -name "config-*" 2>/dev/null); do
             echo "CONFIG_ATH_USER_REGD=y" >> "$KCONF"
-            echo "Modificado: $KCONF"
           done
 
-      - name: Parchear regdb frecuencias extendidas
+      - name: Parchear regdb
         run: |
           cd openwrt
           REGDB_TXT=$(find feeds/ package/ -name "db.txt" 2>/dev/null | grep -v backup | head -1)
-          echo "db.txt: $REGDB_TXT"
           if [ -n "$REGDB_TXT" ]; then
-            cp "$REGDB_TXT" "${REGDB_TXT}.backup"
-            printf 'country 00:\n\t(4920 - 6100 @ 80), (30), NO-CCK\n\t(4920 - 6100 @ 40), (30), NO-CCK\n\t(4920 - 6100 @ 20), (30), NO-CCK\n\t(2402 - 2472 @ 40), (20), NO-CCK\n\t(57240 - 63720 @ 2160), (0)\n\ncountry US:\n\t(4920 - 6100 @ 80), (30)\n\t(4920 - 6100 @ 40), (30)\n\t(4920 - 6100 @ 20), (30)\n\t(2402 - 2472 @ 40), (20)\n\t(57240 - 63720 @ 2160), (0)\n\ncountry MX:\n\t(4920 - 6100 @ 80), (30)\n\t(4920 - 6100 @ 40), (30)\n\t(4920 - 6100 @ 20), (30)\n\t(2402 - 2472 @ 40), (20)\n\t(57240 - 63720 @ 2160), (0)\n' > "$REGDB_TXT"
-            echo "db.txt parcheado"
+            printf 'country 00:\n\t(4920 - 6100 @ 80), (30), NO-CCK\n\t(2402 - 2472 @ 40), (20), NO-CCK\n\t(57240 - 63720 @ 2160), (0)\n\ncountry US:\n\t(4920 - 6100 @ 80), (30)\n\t(2402 - 2472 @ 40), (20)\n\t(57240 - 63720 @ 2160), (0)\n\ncountry MX:\n\t(4920 - 6100 @ 80), (30)\n\t(2402 - 2472 @ 40), (20)\n\t(57240 - 63720 @ 2160), (0)\n' > "$REGDB_TXT"
           fi
 
-      - name: Custom Configuration
+      - name: Configuracion
         run: |
           cd openwrt
           mkdir -p files/etc/config files/etc/init.d files/etc/uci-defaults files/etc/modules.d
@@ -58,14 +52,12 @@ jobs:
           printf "config system\n\toption hostname 'LiteBeam-TECNODANY'\n\toption timezone 'CST6CDT,M3.2.0,M11.1.0'\n" > files/etc/config/system
           printf "config wifi-device 'radio0'\n\toption type 'mac80211'\n\toption hwmode '11a'\n\toption channel '100'\n\toption country '00'\n\toption htmode 'HT20'\n\toption disabled '0'\nconfig wifi-iface 'default_radio0'\n\toption device 'radio0'\n\toption network 'lan'\n\toption mode 'ap'\n\toption ssid 'TECNODANY2026-AP'\n\toption encryption 'psk2'\n\toption key 'td1721DANY'\n" > files/etc/config/wireless
           printf "config interface 'loopback'\n\toption ifname 'lo'\n\toption proto 'static'\n\toption ipaddr '127.0.0.1'\n\toption netmask '255.0.0.0'\nconfig interface 'lan'\n\toption type 'bridge'\n\toption ifname 'eth0'\n\toption proto 'static'\n\toption ipaddr '192.168.1.1'\n\toption netmask '255.255.255.0'\nconfig interface 'wan'\n\toption ifname 'eth1'\n\toption proto 'dhcp'\n" > files/etc/config/network
-          printf '#!/bin/sh /etc/rc.common\nSTART=11\n\nstart() {\n    sleep 2\n    rmmod ath9k 2>/dev/null\n    rmmod ath9k_common 2>/dev/null\n    rmmod ath9k_hw 2>/dev/null\n    rmmod ath 2>/dev/null\n    sleep 1\n    modprobe ath regdomain=0\n    modprobe ath9k_hw\n    modprobe ath9k_common\n    modprobe ath9k\n    sleep 1\n    iw reg set 00\n    logger "regdomain forzado a 00"\n}\nstop() { return 0; }\n' > files/etc/init.d/fix-regdomain
-          chmod +x files/etc/init.d/fix-regdomain
           printf '#!/bin/sh /etc/rc.common\nSTART=99\nstart() {\n  if ! grep -q "^TECNODANY2026:" /etc/passwd; then\n    HASH=$(echo "td1721DANY" | openssl passwd -1 -stdin)\n    echo "TECNODANY2026:x:1001:1001:Admin:/home/TECNODANY2026:/bin/ash" >> /etc/passwd\n    echo "TECNODANY2026:${HASH}:19000:0:99999:7:::" >> /etc/shadow\n    mkdir -p /home/TECNODANY2026\n  fi\n}\nstop() { return 0; }\n' > files/etc/init.d/tecnodany-persist
           chmod +x files/etc/init.d/tecnodany-persist
           printf '#!/bin/sh\necho "root:td1721DANY" | chpasswd\nHASH=$(echo "td1721DANY" | openssl passwd -1 -stdin)\nif ! grep -q "^TECNODANY2026:" /etc/passwd; then\n  echo "TECNODANY2026:x:1001:1001:Admin:/home/TECNODANY2026:/bin/ash" >> /etc/passwd\n  echo "TECNODANY2026:${HASH}:19000:0:99999:7:::" >> /etc/shadow\n  mkdir -p /home/TECNODANY2026\nfi\nuci set system.@system[0].hostname=LiteBeam-TECNODANY\nuci commit system\nexit 0\n' > files/etc/uci-defaults/99-tecnodany
           chmod +x files/etc/uci-defaults/99-tecnodany
 
-      - name: Set Target Profile
+      - name: Target y Compilar
         run: |
           cd openwrt
           cat > .config << CONF
@@ -91,10 +83,6 @@ jobs:
           CONFIG_PACKAGE_mtd=y
           CONF
           make defconfig
-
-      - name: Compile Firmware
-        run: |
-          cd openwrt
           make -j$(nproc) || make -j1 V=s
 
       - name: Upload Artifact
